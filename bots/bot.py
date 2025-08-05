@@ -740,20 +740,17 @@ def next_move(board):
     # Step 1: Check if we can win immediately
     for col in valid_columns:
         if can_win_with_move(board, col, my_id):
-            print(f"WINNING MOVE: Choosing column {col}")
             return col
     
     # Step 2: Check if opponent can win next move and block them
     opponent_id = 1 if my_id == 2 else 2
     for col in valid_columns:
         if can_win_with_move(board, col, opponent_id):
-            print(f"BLOCKING MOVE: Opponent could win at column {col}, blocking!")
             return col
     
     # Step 2.5: Advanced threat analysis - look for critical threats to handle
     critical_threat_move = handle_critical_threats(board, my_id, opponent_id)
     if critical_threat_move is not None:
-        print(f"CRITICAL THREAT: Handling urgent threat at column {critical_threat_move}")
         return critical_threat_move
     
     # Step 3: Opening strategy - prioritize center heavily in early game
@@ -765,23 +762,18 @@ def next_move(board):
         center_options = [col for col in valid_columns if abs(col - center_col) <= 1]
         if center_options:
             if center_col in center_options:
-                print(f"OPENING CENTER: Choosing exact center column {center_col}")
                 return center_col
             else:
                 best_center = min(center_options, key=lambda c: abs(c - center_col))
-                print(f"OPENING NEAR-CENTER: Choosing column {best_center}")
                 return best_center
     
     # Step 4: Look for powerful offensive threats before using full lookahead
     offensive_threat_move = find_best_offensive_threat(board, my_id, opponent_id)
     if offensive_threat_move is not None:
-        print(f"OFFENSIVE THREAT: Creating powerful threat at column {offensive_threat_move}")
         return offensive_threat_move
     
     # Step 5: Use lookahead strategy to find the best move
-    print("LOOKAHEAD MOVE: Using minimax strategy...")
     best_col = get_best_move_lookahead(board, depth=3)
-    print(f"LOOKAHEAD MOVE: Choosing column {best_col}")
     
     time.sleep(0.1) 
     return best_col

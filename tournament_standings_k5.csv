@@ -1,3 +1,4 @@
 Rank,Bot Name,Score,Wins - Losses
-1,bot,4,0
-2,user_bot,4,0
+1,bot,16,8
+2,user_bot,8,0
+3,user_advance_bot,0,-8
