@@ -86,6 +86,7 @@ def evaluate_position(board, player_id):
     score += evaluate_center_control(board, player_id, opponent_id)
     score += evaluate_connectivity(board, player_id, opponent_id)
     score += evaluate_threats(board, player_id, opponent_id)
+    score += evaluate_tactical_advantage(board, player_id)  # Add tactical evaluation
     
     return score
 
@@ -213,32 +214,29 @@ def evaluate_connectivity(board, player_id, opponent_id):
     return score
 
 def evaluate_threats(board, player_id, opponent_id):
-    """Advanced threat evaluation including forced sequences and complex patterns"""
+    """Basic threat evaluation"""
     rows = len(board)
     cols = len(board[0])
     score = 0
     
-    # Analyze different types of threats
-    player_threat_analysis = analyze_all_threats(board, player_id, opponent_id)
-    opponent_threat_analysis = analyze_all_threats(board, opponent_id, player_id)
-    
-    # Score player threats (offensive)
-    score += player_threat_analysis['double_threats'] * 100  # Multiple winning moves
-    score += player_threat_analysis['fork_threats'] * 80     # Forcing sequences
-    score += player_threat_analysis['trap_threats'] * 60    # Unavoidable setups
-    score += player_threat_analysis['tempo_threats'] * 40   # Forcing opponent response
-    score += player_threat_analysis['potential_threats'] * 20  # Future threat potential
-    
-    # Score opponent threats (defensive - higher penalties for immediate threats)
-    score -= opponent_threat_analysis['double_threats'] * 120  # Must prevent double threats
-    score -= opponent_threat_analysis['fork_threats'] * 90     # Prevent forcing sequences
-    score -= opponent_threat_analysis['trap_threats'] * 70    # Prevent unavoidable setups
-    score -= opponent_threat_analysis['tempo_threats'] * 50   # Prevent forcing moves
-    score -= opponent_threat_analysis['potential_threats'] * 15  # Monitor future threats
-    
-    # Analyze threat interactions and combinations
-    threat_interaction_bonus = analyze_threat_interactions(board, player_id, opponent_id)
-    score += threat_interaction_bonus
+    # Simple threat counting
+    for col in range(cols):
+        drop_row = get_drop_row(board, col)
+        if drop_row != -1:
+            # Check player threats
+            temp_board = [row[:] for row in board]
+            temp_board[drop_row][col] = player_id
+            if count_winning_moves(temp_board, player_id) >= 2:
+                score += 100  # Double threat
+            elif count_winning_moves(temp_board, player_id) >= 1:
+                score += 50   # Single threat
+            
+            # Check opponent threats
+            temp_board[drop_row][col] = opponent_id
+            if count_winning_moves(temp_board, opponent_id) >= 2:
+                score -= 120  # Opponent double threat is worse
+            elif count_winning_moves(temp_board, opponent_id) >= 1:
+                score -= 60   # Opponent single threat
     
     return score
 
@@ -533,15 +531,17 @@ def evaluate_window(window, player_id, opponent_id):
     elif player_count == connect_k - 1 and empty_count == 1:
         score += 100   # One move away from winning
     elif player_count == connect_k - 2 and empty_count == 2:
-        score += 10    # Two moves away from winning
+        score += 20    # Two moves away from winning
     elif player_count == connect_k - 3 and empty_count == 3:
-        score += 1     # Three moves away from winning
+        score += 5     # Three moves away from winning
     
     # Penalize opponent's good positions
     if opponent_count == connect_k - 1 and empty_count == 1:
         score -= 80    # Opponent one move away from winning
     elif opponent_count == connect_k - 2 and empty_count == 2:
-        score -= 8     # Opponent two moves away
+        score -= 15    # Opponent two moves away
+    elif opponent_count == connect_k - 3 and empty_count == 3:
+        score -= 3     # Opponent three moves away
     
     return score
 
@@ -599,143 +599,318 @@ def minimax(board, depth, is_maximizing, alpha, beta, player_id):
                     break  # Alpha-beta pruning
         return min_eval
 
-def get_best_move_lookahead(board, depth=3):
-    """Get the best move using minimax lookahead with strategic positioning"""
-    valid_columns = [c for c in range(len(board[0])) if board[0][c] == 0]
+def get_best_move_lookahead(board, depth=2):
+    """Get best move using minimax lookahead"""
+    cols = len(board[0])
+    valid_columns = [c for c in range(cols) if board[0][c] == 0]
+    
     best_score = float('-inf')
-    best_cols = []
+    best_moves = []
     
     for col in valid_columns:
-        row = make_move(board, col, my_id)
-        if row != -1:
+        drop_row = get_drop_row(board, col)
+        if drop_row != -1:
+            board[drop_row][col] = my_id
             score = minimax(board, depth - 1, False, float('-inf'), float('inf'), my_id)
             
-            # Add strategic positioning bonuses for immediate move
-            score += get_positional_bonus(board, col, row, my_id)
+            # Add positional bonus
+            score += get_positional_bonus(board, col, drop_row, my_id)
             
-            undo_move(board, col, row)
+            board[drop_row][col] = 0  # Undo
             
             if score > best_score:
                 best_score = score
-                best_cols = [col]
+                best_moves = [col]
             elif score == best_score:
-                best_cols.append(col)
+                best_moves.append(col)
     
-    # If multiple moves have the same score, use advanced tie-breaking
-    if len(best_cols) > 1:
-        best_cols = advanced_tie_breaker(board, best_cols)
+    # Advanced tie-breaking
+    if len(best_moves) > 1:
+        return advanced_tie_breaker(board, best_moves)
     
-    return best_cols[0] if best_cols else valid_columns[0]
+    return best_moves[0] if best_moves else valid_columns[0]
 
 def get_positional_bonus(board, col, row, player_id):
-    """Calculate immediate positional bonuses for a move with enhanced center focus"""
+    """Calculate positional bonuses for a move"""
     rows = len(board)
     cols = len(board[0])
     bonus = 0
     
-    # Enhanced center preference (much stronger than before)
+    # Center preference
     center_col = cols // 2
     center_distance = abs(col - center_col)
     
-    # Exponential center bonus instead of linear
     if center_distance == 0:  # Exact center
-        bonus += 25
+        bonus += 20
     elif center_distance == 1:  # Adjacent to center
-        bonus += 15
+        bonus += 12
     elif center_distance == 2:  # Two away from center
-        bonus += 8
+        bonus += 6
     else:  # Further from center
-        bonus += max(0, 5 - center_distance)
+        bonus += max(0, 3 - center_distance)
     
-    # Height preference with center interaction
-    height_bonus = rows - row
-    if center_distance <= 1:  # Boost height bonus for center columns
-        height_bonus *= 2
-    bonus += height_bonus
+    # Height preference (higher pieces generally better)
+    bonus += (rows - row) * 2
     
-    # Edge penalty (stronger for non-strategic edge plays)
+    # Edge penalty
     if col == 0 or col == cols - 1:
-        # Less penalty if it's a strategic edge play near center
-        edge_penalty = 8 if center_distance > 2 else 3
-        bonus -= edge_penalty
-    
-    # Center foundation bonus (playing in center bottom area)
-    if center_distance <= 1 and row >= rows - 3:  # Bottom 3 rows of center area
-        bonus += 10
-    
-    # Center tower building bonus
-    if center_distance == 0:  # Center column
-        pieces_below = 0
-        for check_row in range(row + 1, rows):
-            if board[check_row][col] == player_id:
-                pieces_below += 1
-        bonus += pieces_below * 3  # Bonus for building center towers
-    
-    # Symmetry bonus for balanced center control
-    if center_distance == 1:
-        opposite_col = center_col + (center_col - col)  # Mirror position
-        if 0 <= opposite_col < cols:
-            # Check if we have pieces in the mirrored position
-            for check_row in range(rows):
-                if board[check_row][opposite_col] == player_id:
-                    bonus += 2  # Small bonus for symmetrical play
-                    break
+        bonus -= 5
     
     return bonus
 
 def advanced_tie_breaker(board, candidate_cols):
-    """Advanced tie-breaking with heavy center positioning focus"""
+    """Advanced tie-breaking for equally good moves"""
     cols = len(board[0])
     center_col = cols // 2
     
-    # Score each candidate column with enhanced center preference
+    # Score each candidate
     scored_cols = []
     for col in candidate_cols:
         score = 0
         
-        # 1. Strong center preference (exponential scoring)
+        # Center preference
         center_distance = abs(col - center_col)
-        if center_distance == 0:  # Exact center
-            score += 20
-        elif center_distance == 1:  # Adjacent to center
-            score += 12
-        elif center_distance == 2:  # Two away
-            score += 6
-        else:  # Further away
-            score += max(0, 3 - center_distance)
+        if center_distance == 0:
+            score += 15
+        elif center_distance == 1:
+            score += 10
+        elif center_distance == 2:
+            score += 5
         
-        # 2. Center area control bonus
-        if center_distance <= 1:
-            score += 8
-        
-        # 3. Avoid edges unless they're strategic
+        # Avoid edges unless necessary
         if col in [0, cols - 1]:
-            # Heavy penalty for edges, unless close to center on small boards
-            edge_penalty = 10 if cols > 5 else 5
-            score -= edge_penalty
+            score -= 8
         
-        # 4. Balance bonus for symmetric center control
-        if center_distance == 1:
-            opposite_col = center_col + (center_col - col)
-            if 0 <= opposite_col < cols and opposite_col in candidate_cols:
-                score += 3  # Slight bonus if we can choose symmetrically
-        
-        # 5. Column density consideration (prefer less crowded center columns)
+        # Column density (prefer less crowded center columns)
         pieces_in_col = sum(1 for row in range(len(board)) if board[row][col] != 0)
         if center_distance <= 1:
-            # For center columns, slight preference for less crowded ones
-            score += max(0, 3 - pieces_in_col)
+            score += max(0, 4 - pieces_in_col)
         
         scored_cols.append((score, col))
     
-    # Sort by score (descending), then by center distance (ascending), then by column index
-    scored_cols.sort(key=lambda x: (-x[0], abs(x[1] - center_col), x[1]))
+    # Sort by score descending, then by center distance ascending
+    scored_cols.sort(key=lambda x: (-x[0], abs(x[1] - center_col)))
     
-    return [col for score, col in scored_cols]
+    return scored_cols[0][1]
+
+def detect_double_threat_opportunity(board, player_id):
+    """Detect if we can create a double threat (multiple winning moves)"""
+    cols = len(board[0])
+    
+    for col in range(cols):
+        drop_row = get_drop_row(board, col)
+        if drop_row == -1:
+            continue
+        
+        # Simulate placing our piece
+        temp_board = [row[:] for row in board]
+        temp_board[drop_row][col] = player_id
+        
+        # Count how many winning moves this creates
+        winning_moves = count_winning_moves(temp_board, player_id)
+        if winning_moves >= 2:
+            return col  # This creates a double threat!
+    
+    return None
+
+def detect_opponent_double_threat(board, player_id):
+    """Detect if opponent can create a double threat and where to prevent it"""
+    opponent_id = 1 if player_id == 2 else 2
+    cols = len(board[0])
+    
+    threat_columns = []
+    
+    for col in range(cols):
+        drop_row = get_drop_row(board, col)
+        if drop_row == -1:
+            continue
+        
+        # Simulate opponent placing their piece
+        temp_board = [row[:] for row in board]
+        temp_board[drop_row][col] = opponent_id
+        
+        # Count how many winning moves this would create for opponent
+        winning_moves = count_winning_moves(temp_board, opponent_id)
+        if winning_moves >= 2:
+            threat_columns.append(col)
+    
+    return threat_columns
+
+def detect_column_stacking(board, col):
+    """Detect if a column is getting too stacked with alternating pieces"""
+    rows = len(board)
+    pieces_in_col = 0
+    alternating_pattern = 0
+    
+    # Count pieces and check for alternating pattern
+    last_piece = 0
+    for row in range(rows - 1, -1, -1):
+        if board[row][col] != 0:
+            pieces_in_col += 1
+            if last_piece != 0 and board[row][col] != last_piece:
+                alternating_pattern += 1
+            last_piece = board[row][col]
+        else:
+            break
+    
+    # If column has 4+ pieces with alternating pattern, it's getting stacked
+    return pieces_in_col >= 4 and alternating_pattern >= 2
+
+def find_breakthrough_opportunity(board, player_id):
+    """Look for columns where we can break the center stalemate"""
+    cols = len(board[0])
+    center_col = cols // 2
+    opponent_id = 1 if player_id == 2 else 2
+    
+    # Check adjacent columns to center for breakthrough opportunities
+    for offset in [-1, 1, -2, 2]:
+        col = center_col + offset
+        if 0 <= col < cols and board[0][col] == 0:
+            # Simulate placing piece here
+            drop_row = get_drop_row(board, col)
+            if drop_row != -1:
+                temp_board = [row[:] for row in board]
+                temp_board[drop_row][col] = player_id
+                
+                # Check if this creates good opportunities
+                score = evaluate_position(temp_board, player_id)
+                # If this position is promising and avoids center trap
+                if score > 50 and not detect_column_stacking(board, center_col):
+                    return col
+    
+    return None
+
+def evaluate_tactical_advantage(board, player_id):
+    """Evaluate tactical advantages like tempo, positioning, and threats"""
+    opponent_id = 1 if player_id == 2 else 2
+    rows = len(board)
+    cols = len(board[0])
+    advantage_score = 0
+    
+    # 1. Tempo advantage - who has more immediate threats
+    player_threats = 0
+    opponent_threats = 0
+    
+    for col in range(cols):
+        drop_row = get_drop_row(board, col)
+        if drop_row != -1:
+            # Check player threats
+            temp_board = [row[:] for row in board]
+            temp_board[drop_row][col] = player_id
+            if count_winning_moves(temp_board, player_id) > 0:
+                player_threats += 1
+            
+            # Check opponent threats
+            temp_board[drop_row][col] = opponent_id
+            if count_winning_moves(temp_board, opponent_id) > 0:
+                opponent_threats += 1
+    
+    advantage_score += (player_threats - opponent_threats) * 20
+    
+    # 2. Vertical control - control of columns
+    vertical_control = 0
+    for col in range(cols):
+        player_pieces = sum(1 for row in range(rows) if board[row][col] == player_id)
+        opponent_pieces = sum(1 for row in range(rows) if board[row][col] == opponent_id)
+        
+        if player_pieces > opponent_pieces:
+            vertical_control += (player_pieces - opponent_pieces) * 3
+        elif opponent_pieces > player_pieces:
+            vertical_control -= (opponent_pieces - player_pieces) * 3
+    
+    advantage_score += vertical_control
+    
+    # 3. Formation quality - how well pieces work together
+    formation_bonus = 0
+    directions = [(0, 1), (1, 0), (1, 1), (1, -1)]
+    
+    for r in range(rows):
+        for c in range(cols):
+            if board[r][c] == player_id:
+                # Check for good formations (2-3 in a row with room to extend)
+                for dr, dc in directions:
+                    consecutive = 1
+                    # Count consecutive pieces
+                    nr, nc = r + dr, c + dc
+                    while 0 <= nr < rows and 0 <= nc < cols and board[nr][nc] == player_id:
+                        consecutive += 1
+                        nr, nc = nr + dr, nc + dc
+                    
+                    # Check if formation has room to grow
+                    if consecutive >= 2:
+                        has_room = False
+                        # Check both ends for extension possibilities
+                        end1_r, end1_c = r - dr, c - dc
+                        end2_r, end2_c = nr, nc
+                        
+                        if (0 <= end1_r < rows and 0 <= end1_c < cols and board[end1_r][end1_c] == 0) or \
+                           (0 <= end2_r < rows and 0 <= end2_c < cols and board[end2_r][end2_c] == 0):
+                            has_room = True
+                        
+                        if has_room:
+                            formation_bonus += consecutive * 5
+    
+    advantage_score += formation_bonus
+    
+    return advantage_score
+
+def find_forcing_move(board, player_id):
+    """Find moves that force opponent into difficult positions"""
+    opponent_id = 1 if player_id == 2 else 2
+    cols = len(board[0])
+    
+    best_forcing_move = None
+    best_forcing_score = 0
+    
+    for col in range(cols):
+        drop_row = get_drop_row(board, col)
+        if drop_row == -1:
+            continue
+        
+        # Simulate our move
+        temp_board = [row[:] for row in board]
+        temp_board[drop_row][col] = player_id
+        
+        forcing_score = 0
+        
+        # Check if this forces opponent to respond defensively
+        immediate_threats = count_winning_moves(temp_board, player_id)
+        if immediate_threats > 0:
+            forcing_score += immediate_threats * 30
+        
+        # Check if this limits opponent's good options
+        opponent_good_moves = 0
+        for opp_col in range(cols):
+            opp_drop_row = get_drop_row(temp_board, opp_col)
+            if opp_drop_row != -1:
+                temp_board[opp_drop_row][opp_col] = opponent_id
+                opp_score = evaluate_position(temp_board, opponent_id)
+                if opp_score > 50:  # Opponent has a good move
+                    opponent_good_moves += 1
+                temp_board[opp_drop_row][opp_col] = 0  # Undo
+        
+        # Fewer good options for opponent = better forcing move
+        if opponent_good_moves <= 2:
+            forcing_score += (3 - opponent_good_moves) * 15
+        
+        # Check tactical advantage after our move
+        tactical_advantage = evaluate_tactical_advantage(temp_board, player_id)
+        forcing_score += tactical_advantage
+        
+        if forcing_score > best_forcing_score:
+            best_forcing_score = forcing_score
+            best_forcing_move = col
+    
+    # Only return forcing move if it's significantly better than random
+    if best_forcing_score >= 50:
+        return best_forcing_move
+    
+    return None
 
 def next_move(board):
-    print(board)
     valid_columns = [c for c in range(len(board[0])) if board[0][c] == 0]
+    cols = len(board[0])
+    center_col = cols // 2
     
     # Step 1: Check if we can win immediately
     for col in valid_columns:
@@ -748,143 +923,76 @@ def next_move(board):
         if can_win_with_move(board, col, opponent_id):
             return col
     
-    # Step 2.5: Advanced threat analysis - look for critical threats to handle
-    critical_threat_move = handle_critical_threats(board, my_id, opponent_id)
-    if critical_threat_move is not None:
-        return critical_threat_move
+    # Step 3: Check for double threat opportunities
+    double_threat_col = detect_double_threat_opportunity(board, my_id)
+    if double_threat_col is not None:
+        return double_threat_col
     
-    # Step 3: Opening strategy - prioritize center heavily in early game
+    # Step 4: Prevent opponent double threats
+    opponent_double_threats = detect_opponent_double_threat(board, my_id)
+    if opponent_double_threats:
+        # Block the most dangerous double threat setup
+        best_block = opponent_double_threats[0]  # For now, block the first one
+        return best_block
+    
+    # Step 5: Check for center column stacking and find alternatives
     total_pieces = sum(1 for row in board for cell in row if cell != 0)
-    cols = len(board[0])
-    center_col = cols // 2
     
-    if total_pieces <= 4:  # Very early game (first few moves)
+    if detect_column_stacking(board, center_col):
+        # Look for breakthrough opportunities
+        breakthrough_col = find_breakthrough_opportunity(board, my_id)
+        if breakthrough_col is not None:
+            return breakthrough_col
+        
+        # Look for forcing moves that create advantage
+        forcing_col = find_forcing_move(board, my_id)
+        if forcing_col is not None:
+            return forcing_col
+    
+    # Step 6: Look for forcing moves in mid-game
+    if total_pieces >= 8:  # Mid-game onwards
+        forcing_col = find_forcing_move(board, my_id)
+        if forcing_col is not None:
+            return forcing_col
+    
+    # Step 7: Smart opening strategy
+    if total_pieces <= 6:  # Early game - focus more on center control
         center_options = [col for col in valid_columns if abs(col - center_col) <= 1]
+        
         if center_options:
-            if center_col in center_options:
+            # But avoid center if it's already getting stacked
+            if center_col in center_options and not detect_column_stacking(board, center_col):
                 return center_col
             else:
-                best_center = min(center_options, key=lambda c: abs(c - center_col))
-                return best_center
+                # Choose adjacent center that's not stacked
+                for offset in [-1, 1]:
+                    alt_col = center_col + offset
+                    if alt_col in center_options and not detect_column_stacking(board, alt_col):
+                        return alt_col
     
-    # Step 4: Look for powerful offensive threats before using full lookahead
-    offensive_threat_move = find_best_offensive_threat(board, my_id, opponent_id)
-    if offensive_threat_move is not None:
-        return offensive_threat_move
+    # Step 8: Use lookahead strategy with anti-repetition
+    best_col = get_best_move_lookahead(board, depth=2)
     
-    # Step 5: Use lookahead strategy to find the best move
-    best_col = get_best_move_lookahead(board, depth=3)
+    # If lookahead suggests center but it's stacked, find alternative
+    if best_col == center_col and detect_column_stacking(board, center_col):
+        # Find best alternative from adjacent columns
+        alternatives = [col for col in valid_columns if abs(col - center_col) <= 2 and col != center_col]
+        if alternatives:
+            # Score alternatives and pick best
+            scored_alternatives = []
+            for col in alternatives:
+                row = make_move(board, col, my_id)
+                if row != -1:
+                    score = evaluate_position(board, my_id)
+                    score += get_positional_bonus(board, col, row, my_id)
+                    undo_move(board, col, row)
+                    scored_alternatives.append((score, col))
+            
+            if scored_alternatives:
+                scored_alternatives.sort(reverse=True)
+                best_col = scored_alternatives[0][1]
     
-    time.sleep(0.1) 
+    time.sleep(0.05)  # Small delay to avoid too fast play (matching user_advance_bot)
     return best_col
 
-def handle_critical_threats(board, player_id, opponent_id):
-    """Handle critical threats that require immediate attention"""
-    rows = len(board)
-    cols = len(board[0])
-    
-    # Check for opponent double threats (they can win in multiple ways next turn)
-    opponent_double_threats = []
-    
-    for col in range(cols):
-        drop_row = get_drop_row(board, col)
-        if drop_row == -1:
-            continue
-        
-        # Simulate opponent move
-        temp_board = [row[:] for row in board]
-        temp_board[drop_row][col] = opponent_id
-        
-        # Count winning moves opponent would have
-        winning_moves = count_winning_moves(temp_board, opponent_id)
-        if winning_moves >= 2:
-            opponent_double_threats.append(col)
-    
-    # If opponent can create double threat, we need to prevent it
-    if opponent_double_threats:
-        # Prioritize preventing the most dangerous double threat
-        best_prevention = None
-        min_opponent_advantage = float('inf')
-        
-        for threat_col in opponent_double_threats:
-            # Simulate us blocking this threat setup
-            temp_board = [row[:] for row in board]
-            block_row = get_drop_row(temp_board, threat_col)
-            if block_row != -1:
-                temp_board[block_row][threat_col] = player_id
-                
-                # Evaluate resulting position
-                position_score = evaluate_position(temp_board, player_id)
-                if position_score > min_opponent_advantage:
-                    min_opponent_advantage = position_score
-                    best_prevention = threat_col
-        
-        return best_prevention
-    
-    # Check for opponent fork threats that we must prevent
-    critical_forks = []
-    for col in range(cols):
-        drop_row = get_drop_row(board, col)
-        if drop_row == -1:
-            continue
-        
-        temp_board = [row[:] for row in board]
-        temp_board[drop_row][col] = opponent_id
-        
-        if is_fork_threat(temp_board, col, drop_row, opponent_id, player_id):
-            critical_forks.append(col)
-    
-    if critical_forks:
-        # Block the most dangerous fork
-        return critical_forks[0]  # For now, block the first one found
-    
-    return None
 
-def find_best_offensive_threat(board, player_id, opponent_id):
-    """Find the best offensive threat move that creates significant advantage"""
-    rows = len(board)
-    cols = len(board[0])
-    
-    best_threat_move = None
-    best_threat_score = 0
-    
-    for col in range(cols):
-        drop_row = get_drop_row(board, col)
-        if drop_row == -1:
-            continue
-        
-        # Simulate our move
-        temp_board = [row[:] for row in board]
-        temp_board[drop_row][col] = player_id
-        
-        threat_score = 0
-        
-        # Check if we create double threat
-        winning_moves = count_winning_moves(temp_board, player_id)
-        if winning_moves >= 2:
-            threat_score += 100  # Double threat is very powerful
-        
-        # Check if we create fork threat
-        if is_fork_threat(temp_board, col, drop_row, player_id, opponent_id):
-            threat_score += 80
-        
-        # Check if we create trap threat
-        if is_trap_threat(temp_board, col, drop_row, player_id, opponent_id):
-            threat_score += 60
-        
-        # Bonus for center positioning in threatening moves
-        center_col = cols // 2
-        center_distance = abs(col - center_col)
-        if center_distance <= 1:
-            threat_score += 20
-        
-        # Update best if this is better
-        if threat_score > best_threat_score:
-            best_threat_score = threat_score
-            best_threat_move = col
-    
-    # Only return if we found a significant threat (threshold)
-    if best_threat_score >= 60:  # Minimum threshold for considering it powerful
-        return best_threat_move
-    
-    return None
