@@ -13,4 +13,4 @@ def init(isFirst,connectK):
 
 def next_move(board):
     valid_columns = [c for c in range(len(board[0])) if board[0][c] == 0]
-    return random.choice(valid_columns)
+    return random.choice(valid_columns) 

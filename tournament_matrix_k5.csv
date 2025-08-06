@@ -1,4 +1,4 @@
-Bot Name,bot,user_advance_bot,user_bot
-bot,0,8,8
-user_advance_bot,0,0,0
-user_bot,0,8,0
+Bot Name,bot,simple,user_advance_bot
+bot,0,8,4
+simple,0,0,0
+user_advance_bot,4,8,0
