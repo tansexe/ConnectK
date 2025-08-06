@@ -552,7 +552,6 @@ def find_forcing_move(board, player_id):
     return None
 
 def next_move(board):
-    print(f"USER_BOT: Analyzing position...")
     valid_columns = [c for c in range(len(board[0])) if board[0][c] == 0]
     cols = len(board[0])
     center_col = cols // 2
@@ -560,20 +559,17 @@ def next_move(board):
     # Step 1: Check if we can win immediately
     for col in valid_columns:
         if can_win_with_move(board, col, my_id):
-            print(f"USER_BOT WINNING: Choosing column {col}")
             return col
     
     # Step 2: Check if opponent can win next move and block them
     opponent_id = 1 if my_id == 2 else 2
     for col in valid_columns:
         if can_win_with_move(board, col, opponent_id):
-            print(f"USER_BOT BLOCKING: Opponent could win at column {col}, blocking!")
             return col
     
     # Step 3: Check for double threat opportunities
     double_threat_col = detect_double_threat_opportunity(board, my_id)
     if double_threat_col is not None:
-        print(f"USER_BOT DOUBLE THREAT: Creating double threat at column {double_threat_col}")
         return double_threat_col
     
     # Step 4: Prevent opponent double threats
@@ -581,32 +577,26 @@ def next_move(board):
     if opponent_double_threats:
         # Block the most dangerous double threat setup
         best_block = opponent_double_threats[0]  # For now, block the first one
-        print(f"USER_BOT PREVENTING DOUBLE THREAT: Blocking opponent setup at column {best_block}")
         return best_block
     
     # Step 5: Check for center column stacking and find alternatives
     total_pieces = sum(1 for row in board for cell in row if cell != 0)
     
     if detect_column_stacking(board, center_col):
-        print("USER_BOT ANTI-STACKING: Center column getting stacked, looking for alternatives...")
-        
         # Look for breakthrough opportunities
         breakthrough_col = find_breakthrough_opportunity(board, my_id)
         if breakthrough_col is not None:
-            print(f"USER_BOT BREAKTHROUGH: Breaking center stalemate with column {breakthrough_col}")
             return breakthrough_col
         
         # Look for forcing moves that create advantage
         forcing_col = find_forcing_move(board, my_id)
         if forcing_col is not None:
-            print(f"USER_BOT FORCING: Using forcing move at column {forcing_col}")
             return forcing_col
     
     # Step 6: Look for forcing moves in mid-game
     if total_pieces >= 8:  # Mid-game onwards
         forcing_col = find_forcing_move(board, my_id)
         if forcing_col is not None:
-            print(f"USER_BOT FORCING: Creating forcing position at column {forcing_col}")
             return forcing_col
     
     # Step 7: Smart opening strategy
@@ -616,24 +606,19 @@ def next_move(board):
         if center_options:
             # But avoid center if it's already getting stacked
             if center_col in center_options and not detect_column_stacking(board, center_col):
-                print(f"USER_BOT OPENING: Choosing center column {center_col}")
                 return center_col
             else:
                 # Choose adjacent center that's not stacked
                 for offset in [-1, 1]:
                     alt_col = center_col + offset
                     if alt_col in center_options and not detect_column_stacking(board, alt_col):
-                        print(f"USER_BOT OPENING: Choosing near-center column {alt_col}")
                         return alt_col
     
     # Step 8: Use lookahead strategy with anti-repetition
-    print("USER_BOT LOOKAHEAD: Using minimax strategy...")
     best_col = get_best_move_with_lookahead(board, depth=2)
     
     # If lookahead suggests center but it's stacked, find alternative
     if best_col == center_col and detect_column_stacking(board, center_col):
-        print("USER_BOT ADAPTIVE: Lookahead suggested stacked center, finding alternative...")
-        
         # Find best alternative from adjacent columns
         alternatives = [col for col in valid_columns if abs(col - center_col) <= 2 and col != center_col]
         if alternatives:
@@ -651,9 +636,6 @@ def next_move(board):
             if scored_alternatives:
                 scored_alternatives.sort(reverse=True)
                 best_col = scored_alternatives[0][1]
-                print(f"USER_BOT ADAPTIVE: Chose alternative column {best_col}")
-    
-    print(f"USER_BOT LOOKAHEAD: Choosing column {best_col}")
     
     time.sleep(0.05)  # Small delay to avoid too fast play
     return best_col
